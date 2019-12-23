@@ -1,9 +1,9 @@
-`include "lib/binary2bcd.v"
 `include "lib/counter.v"
 `include "lib/mux_counter.v"
 `include "lib/digit_decoder.v"
+`include "lib/decade_counter.v"
 
-module Lookup(
+module DisplayDigits(
 	input wire[3:0] digit_select,
 	input wire[3:0] bcd_digit_1,
 	input wire[3:0] bcd_digit_2,
@@ -18,7 +18,7 @@ module Lookup(
 		.out (out)
 	);
 
-	always @ (digit_select) begin
+	always @(digit_select) begin
 		case(digit_select)
 			4'b1000 : digit_value <= bcd_digit_1;
 			4'b0100 : digit_value <= bcd_digit_2;
@@ -41,43 +41,44 @@ module LEDCounter #(localparam NUM_DIGITS=4) (
 		assign digit_select[i] = ~pos_digit_select[i];
 	
 	MuxCounter #(
-		.TIMING_SCALE (4), 
+		.TIMING_SCALE (16), 
 		.OUT_WIDTH (NUM_DIGITS),
 		.MAX (NUM_DIGITS), 
 		.MIN (1)
-	) counter(
+	) refresh_counter(
 		.clk_in (clk_in),
 		.out (pos_digit_select)
 	);
 
-	// Start a counter
-	reg [13:0]binary_counter;
+	// Create a series of decimal counters
+	wire [3:0]bcd_digits[3:0];
+	wire carry[4:0];
 	Counter #(
-		.TIMING_SCALE (20), 
-		.WIRES (14),
-		.MAX (999)
-	) digit_counter (
+		.TIMING_SCALE (4_194_304),
+		.OUT_WIDTH (1),
+		.MAX (1),
+		.MIN (0)
+	) timing_clock (
 		.clk_in (clk_in),
-		.out (binary_counter)
+		.out (carry[0])
 	);
 
-	// Convert to individual digits
-	wire [3:0]bcd_digits[3:0];
-	Binary2BCD binary2bcd(
-		.binary (binary_counter),
-		.ones (bcd_digits[3]),
-		.tens (bcd_digits[2]),
-		.hundreds (bcd_digits[1]),
-		.thousands (bcd_digits[0])
-	);
+	genvar j;
+	for(j = 0; j < NUM_DIGITS; j = j + 1) begin
+		DecadeCounter digit (
+			.clk_in (carry[j]),
+			.out (bcd_digits[j]),
+			.carry (carry[j+1])
+		);
+	end
 
 	// Output them
-	Lookup lookup(
+	DisplayDigits lookup(
 		.digit_select (pos_digit_select),
-		.bcd_digit_1 (bcd_digits[0]),
-		.bcd_digit_2 (bcd_digits[1]),
-		.bcd_digit_3 (bcd_digits[2]),
-		.bcd_digit_4 (bcd_digits[3]),
+		.bcd_digit_1 (bcd_digits[3]),
+		.bcd_digit_2 (bcd_digits[2]),
+		.bcd_digit_3 (bcd_digits[1]),
+		.bcd_digit_4 (bcd_digits[0]),
 		.out (led_segments)
 	);
 endmodule
